@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import { Analytics } from '@vercel/analytics/react';
 import { Navigation } from './components/Navigation';
 import { DriftTree } from './components/DriftTree';
 import { type Fragment, type Connection } from './lib/supabase';
@@ -1184,9 +1185,7 @@ export default function App() {
         </main>
         {hasEntered && <Navigation />}
       </div>
+      <Analytics />
     </Router>
   );
 }
-
-
-

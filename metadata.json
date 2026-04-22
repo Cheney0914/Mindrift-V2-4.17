@@ -1,0 +1,7 @@
+{
+  "name": "MindDrift",
+  "description": "A thought-capture tool for deep thinkers to discover underlying logic patterns.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

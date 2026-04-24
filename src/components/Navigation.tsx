@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 
 export const Navigation = () => {
   return (
-    <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[calc(100%-48px)] max-w-[440px] glass-dark rounded-full px-8 py-4 flex justify-around items-center z-50 shadow-2xl">
+    <nav className="absolute bottom-8 left-1/2 -translate-x-1/2 w-[calc(100%-48px)] max-w-[440px] glass-dark rounded-full px-8 py-4 flex justify-around items-center z-50 shadow-2xl">
       <NavLink
         to="/"
         className={({ isActive }) =>

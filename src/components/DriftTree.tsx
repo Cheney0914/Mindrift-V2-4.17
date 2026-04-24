@@ -82,6 +82,7 @@ interface Branch {
   intensity: number;
   isSubBranch?: boolean;
   parentId?: number;
+  clusterIndex: number;
 }
 
 export const DriftTree: React.FC<DriftTreeProps> = ({ 
@@ -167,11 +168,21 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
     };
   }, [resonanceMode, resonanceCenterId]);
 
+  // Deterministic random from string
+  const hashString = (str: string) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash);
+  };
+
   // Initialize branches and particles when clusterData, fragments or container size changes
   useEffect(() => {
     if (!containerRef.current) return;
-    const width = containerRef.current.clientWidth;
-    const height = containerRef.current.clientHeight;
+    const width = dimensions.width || containerRef.current.clientWidth;
+    const height = dimensions.height || containerRef.current.clientHeight;
 
     if (width === 0 || height === 0) return; // Wait for size
 
@@ -184,12 +195,12 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
     if (clusterData && clusterData.clusters.length > 0) {
       // Initialize stars if needed
       if (starsRef.current.length === 0) {
-        starsRef.current = Array.from({ length: 150 }, () => ({
-          x: Math.random() * width,
-          y: Math.random() * height,
-          size: Math.random() * 2,
-          opacity: Math.random(),
-          speed: 0.2 + Math.random() * 0.5
+        starsRef.current = Array.from({ length: 150 }, (_, i) => ({
+          x: (hashString(`starX${i}`) % 1000 / 1000) * width,
+          y: (hashString(`starY${i}`) % 1000 / 1000) * height,
+          size: (hashString(`starS${i}`) % 1000 / 500),
+          opacity: hashString(`starO${i}`) % 1000 / 1000,
+          speed: 0.2 + (hashString(`starV${i}`) % 1000 / 2000)
         }));
       }
 
@@ -199,18 +210,17 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
       const newBranches: Branch[] = [];
       clusters.forEach((c, i) => {
         const angle = (Math.PI * 2 / clusters.length) * i;
-        const length = Math.min(width, height) * 0.45; // Reduced from 0.6
+        const length = Math.min(width, height) * 0.45; 
         
-        const endX = Math.cos(angle) * length * 1.15; // Reduced from 1.3
+        const endX = Math.cos(angle) * length * 1.15;
         const endZ = Math.sin(angle) * length * 1.15;
         const endY = -length * 0.75; 
         
-        const cpX = Math.cos(angle) * (length * 0.7); // Reduced from 0.8
+        const cpX = Math.cos(angle) * (length * 0.7);
         const cpZ = Math.sin(angle) * (length * 0.7);
-        const cpY = -length * -0.15; // Reverted closer to original -0.2
+        const cpY = -length * -0.15;
 
         const intensity = c.fragment_ids.length / (maxCount || 1);
-        // Orange palette for branches: rgba(255, 80-160, 0)
         const greenValue = 80 + (80 * intensity);
         const color = `rgba(255, ${greenValue}, 0`; 
 
@@ -229,10 +239,10 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
           endY,
           endZ,
           color,
-          intensity
+          intensity,
+          clusterIndex: i
         });
 
-        // Use sub-themes from AI instead of generic ones
         const subThemes = c.sub_themes || [];
         subThemes.forEach((st: any, j) => {
           const t = 0.4 + (j / subThemes.length) * 0.4;
@@ -240,8 +250,9 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
           const sy = Math.pow(1 - t, 2) * 0 + 2 * (1 - t) * t * cpY + Math.pow(t, 2) * endY;
           const sz = Math.pow(1 - t, 2) * 0 + 2 * (1 - t) * t * cpZ + Math.pow(t, 2) * endZ;
 
-          const subAngle = angle + (Math.random() - 0.5) * 1.5;
-          const subLen = length * 0.4; // Increased from 0.3
+          const h = hashString(st.label + j);
+          const subAngle = angle + ((h % 100) / 100 - 0.5) * 1.5;
+          const subLen = length * 0.4;
           const ex = sx + Math.cos(subAngle) * subLen;
           const ez = sz + Math.sin(subAngle) * subLen;
           const ey = sy - subLen * 0.5;
@@ -262,7 +273,8 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
             color,
             intensity,
             isSubBranch: true,
-            parentId: mainBranchIdx
+            parentId: mainBranchIdx,
+            clusterIndex: i
           });
         });
       });
@@ -278,27 +290,22 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
       fragments.forEach(f => {
         const clusterIdx = clusters.findIndex(c => c.fragment_ids.includes(f.id));
         const clusterIndex = clusterIdx === -1 ? 0 : clusterIdx;
-        const mainBranch = newBranches.find(mb => !mb.isSubBranch && 
-          clusters.findIndex(cl => cl.theme === mb.theme) === clusterIndex
-        );
-        const mainIdx = newBranches.indexOf(mainBranch!);
         
-        const clusterBranches = newBranches.filter((b, idx) => {
-          return idx === mainIdx || (b.isSubBranch && b.parentId === mainIdx);
-        });
+        const clusterBranches = newBranches.filter(b => b.clusterIndex === clusterIndex);
         
-        const branch = clusterBranches[Math.floor(Math.random() * clusterBranches.length)] || newBranches[0];
+        const hash = hashString(f.id);
+        const branch = clusterBranches[hash % clusterBranches.length] || newBranches[0];
         const isConnected = connectedIds.has(f.id);
-        const t = branch.isSubBranch ? (0.2 + Math.random() * 0.8) : (0.3 + Math.random() * 0.6);
+        const t = branch.isSubBranch ? (0.2 + (hash % 80) / 100) : (0.3 + (hash % 60) / 100);
         
         const px = Math.pow(1 - t, 2) * branch.startX + 2 * (1 - t) * t * branch.cpX + Math.pow(t, 2) * branch.endX;
         const py = Math.pow(1 - t, 2) * branch.startY + 2 * (1 - t) * t * branch.cpY + Math.pow(t, 2) * branch.endY;
         const pz = Math.pow(1 - t, 2) * branch.startZ + 2 * (1 - t) * t * branch.cpZ + Math.pow(t, 2) * branch.endZ;
 
-        const offsetRange = 30 + Math.random() * 40; // Reduced cluster spread for better resolution
-        const ox = (Math.random() - 0.5) * offsetRange;
-        const oy = (Math.random() - 0.5) * offsetRange;
-        const oz = (Math.random() - 0.5) * offsetRange;
+        const offsetRange = 8 + (hash % 12); 
+        const ox = ((hash % 11) / 11 - 0.5) * offsetRange;
+        const oy = ((hash % 13) / 13 - 0.5) * offsetRange;
+        const oz = ((hash % 17) / 17 - 0.5) * offsetRange;
 
         newParticles.push({
           id: f.id,
@@ -309,14 +316,14 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
           z: pz + oz,
           baseX: px + ox,
           baseZ: pz + oz,
-          speedY: 0.03 + Math.random() * 0.06,
-          amplitude: 15 + Math.random() * 25,
-          frequency: 0.001 + Math.random() * 0.003,
-          phase: Math.random() * Math.PI * 2,
-          size: 5 + Math.random() * 3,
-          opacity: 0.7 + Math.random() * 0.3,
+          speedY: 0.03 + (hash % 60) / 1000,
+          amplitude: 15 + (hash % 25),
+          frequency: 0.001 + (hash % 30) / 10000,
+          phase: (hash % 628) / 100,
+          size: 5 + (hash % 3),
+          opacity: 0.7 + (hash % 30) / 100,
           isPaused: false,
-          isFalling: false, // Force stay on tree as per user request
+          isFalling: false, 
           branchPosT: t,
           branchStartX: branch.startX,
           branchStartY: branch.startY,
@@ -327,12 +334,12 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
           branchCpX: branch.cpX,
           branchCpY: branch.cpY,
           branchCpZ: branch.cpZ,
-          flashPhase: Math.random() * Math.PI * 2,
-          flashSpeed: 0.02 + Math.random() * 0.03,
+          flashPhase: (hash % 628) / 100,
+          flashSpeed: 0.02 + (hash % 30) / 1000,
           transitionProgress: 1,
           isResonating: false,
           resonanceStrength: 0,
-          pulsePhase: Math.random() * Math.PI * 2,
+          pulsePhase: (hash % 628) / 100,
           pulseProgress: 1
         });
       });
@@ -352,11 +359,11 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
       
       for (let i = 0; i < naiveClusterCount; i++) {
         const angle = (Math.PI * 2 / naiveClusterCount) * i;
-        const length = Math.min(width, height) * 0.35; // Reduced from 0.45
-        const endX = Math.cos(angle) * length * 1.15; // Reduced from 1.3
+        const length = Math.min(width, height) * 0.35; 
+        const endX = Math.cos(angle) * length * 1.15;
         const endZ = Math.sin(angle) * length * 1.15;
         const endY = -length * 0.65;
-        const cpX = Math.cos(angle) * (length * 0.55); // Reduced from 0.7
+        const cpX = Math.cos(angle) * (length * 0.55);
         const cpZ = Math.sin(angle) * (length * 0.7);
         const cpY = -length * 0.1;
 
@@ -373,36 +380,38 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
           endY,
           endZ,
           color: colors[i % colors.length],
-          intensity: 0.5
+          intensity: 0.5,
+          clusterIndex: i
         });
       }
       branchesRef.current = newBranches;
 
       const newParticles: Particle[] = [];
       fragments.forEach((f, idx) => {
-        const branchIdx = idx % naiveClusterCount;
-        const branch = newBranches[branchIdx];
-        const t = 0.3 + Math.random() * 0.6;
+        const hash = hashString(f.id);
+        const clusterIndex = hash % naiveClusterCount;
+        const branch = newBranches[clusterIndex];
+        const t = 0.3 + (hash % 60) / 100;
         
         const px = Math.pow(1 - t, 2) * branch.startX + 2 * (1 - t) * t * branch.cpX + Math.pow(t, 2) * branch.endX;
         const py = Math.pow(1 - t, 2) * branch.startY + 2 * (1 - t) * t * branch.cpY + Math.pow(t, 2) * branch.endY;
         const pz = Math.pow(1 - t, 2) * branch.startZ + 2 * (1 - t) * t * branch.cpZ + Math.pow(t, 2) * branch.endZ;
 
         newParticles.push({
-          id: f.id, content: f.content, clusterIndex: branchIdx,
+          id: f.id, content: f.content, clusterIndex,
           x: px, y: py, z: pz, baseX: px, baseZ: pz,
-          speedY: 0.1, amplitude: 10, frequency: 0.002, phase: 0, size: 5, opacity: 0.8,
+          speedY: 0.1, amplitude: 10, frequency: 0.002, phase: (hash % 628) / 100, size: 5, opacity: 0.8,
           isPaused: false, 
           isFalling: false, 
           branchPosT: t,
           branchStartX: branch.startX, branchStartY: branch.startY, branchStartZ: branch.startZ,
           branchEndX: branch.endX, branchEndY: branch.endY, branchEndZ: branch.endZ,
           branchCpX: branch.cpX, branchCpY: branch.cpY, branchCpZ: branch.cpZ,
-          flashPhase: 0, flashSpeed: 0.02,
+          flashPhase: (hash % 628) / 100, flashSpeed: 0.02,
           transitionProgress: 1,
           isResonating: false,
           resonanceStrength: 0,
-          pulsePhase: 0,
+          pulsePhase: (hash % 628) / 100,
           pulseProgress: 1
         });
       });
@@ -416,12 +425,22 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !containerRef.current) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { alpha: false }); // Optimization
     if (!ctx) return;
+
+    if (canvas.width === 0 || canvas.height === 0) {
+      canvas.width = containerRef.current.clientWidth || 800;
+      canvas.height = containerRef.current.clientHeight || 1200;
+    }
 
     const animate = () => {
       const width = canvas.width;
       const height = canvas.height;
+
+      if (width === 0 || height === 0) {
+        animationFrameRef.current = requestAnimationFrame(animate);
+        return;
+      }
 
       // Update Growth
       if (growthProgressRef.current < 1) {
@@ -1308,25 +1327,6 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
           <div className="w-2 h-2 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
         </div>
       </div>
-
-      {/* Thought Path Summary */}
-      {clusterData?.thought_path && (
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="absolute bottom-28 left-8 z-40 max-w-[280px] space-y-3 pointer-events-auto"
-        >
-          <div className="flex items-center gap-2">
-            <div className="w-1 h-3 bg-primary rounded-full" />
-            <span className="text-[10px] uppercase tracking-widest text-white/60 font-bold">Recent Focus Journey</span>
-          </div>
-          <div className="glass-dark p-4 rounded-xl border border-white/5 shadow-xl">
-            <p className="text-[11px] text-white/70 leading-relaxed font-serif italic">
-              {clusterData.thought_path.evolution_summary}
-            </p>
-          </div>
-        </motion.div>
-      )}
 
       {/* Resonance Subtitle Bar */}
       {resonanceMode && (

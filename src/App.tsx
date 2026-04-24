@@ -7,7 +7,7 @@ import { type Fragment, type Connection } from './lib/supabase';
 import { storage } from './lib/storage';
 import { generateEmbedding, analyzeConnection, synthesizeThoughts, clusterThoughts, type SynthesisResult } from './services/geminiService';
 import { cn } from '@/lib/utils';
-import { ArrowRight, Mic, MicOff, ChevronDown, ChevronUp, Trash2, AlertCircle, Sparkles, Info, Link2, X, Calendar } from 'lucide-react';
+import { ArrowRight, Mic, MicOff, ChevronDown, ChevronUp, Trash2, AlertCircle, Sparkles, Info, Link2, X, Calendar, Trees } from 'lucide-react';
 
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
@@ -1156,9 +1156,12 @@ const LandingPage = ({ onEnter }: { onEnter: () => void }) => (
 
 const AnimatedRoutes = ({ clusterData, setClusterData }: { clusterData: any, setClusterData: any }) => {
   const location = useLocation();
+  const fragments = storage.getFragments(); // Get fresh data for each route change
+  const connections = storage.getConnections();
+
   return (
     <AnimatePresence mode="wait">
-      <div key={location.pathname} className="w-full h-full flex flex-col">
+      <div key={location.pathname} className="absolute inset-0 flex flex-col">
         <Routes location={location}>
           <Route path="/" element={<CapturePage />} />
           <Route path="/stream" element={<StreamPage />} />
@@ -1217,7 +1220,7 @@ export default function App() {
     <Router>
       <div className="max-w-[480px] mx-auto h-screen bg-background relative overflow-hidden flex flex-col">
         <div className="atmosphere" />
-        <main className="flex-1 relative overflow-hidden">
+        <main className="flex-1 relative overflow-hidden flex flex-col">
           {hasEntered ? <AnimatedRoutes clusterData={clusterData} setClusterData={setClusterData} /> : <LandingPage onEnter={handleEnter} />}
         </main>
         {hasEntered && <Navigation />}

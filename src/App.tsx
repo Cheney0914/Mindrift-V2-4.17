@@ -802,6 +802,13 @@ const TreePage = ({ clusterData, setClusterData }: { clusterData: any, setCluste
 
   return (
     <div className="w-full h-full relative bg-[#080810]">
+      {fragments.length === 0 ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center space-y-4 z-10">
+          <Trees className="w-12 h-12 text-white/20 animate-pulse" />
+          <h2 className="text-xl font-serif text-white/60">The field is quiet</h2>
+          <p className="text-sm text-white/30 max-w-[240px]">Record some thought fragments to cultivate your Drift Tree.</p>
+        </div>
+      ) : null}
       <DriftTree 
         fragments={fragments} 
         connections={connections} 
@@ -1151,7 +1158,7 @@ const AnimatedRoutes = ({ clusterData, setClusterData }: { clusterData: any, set
   const location = useLocation();
   return (
     <AnimatePresence mode="wait">
-      <div key={location.pathname} className="w-full">
+      <div key={location.pathname} className="w-full h-full flex flex-col">
         <Routes location={location}>
           <Route path="/" element={<CapturePage />} />
           <Route path="/stream" element={<StreamPage />} />

@@ -175,6 +175,9 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
 
     if (width === 0 || height === 0) return; // Wait for size
 
+    // Ensure growth progress starts if not already running
+    if (growthProgressRef.current === 0) growthProgressRef.current = 0.01;
+
     const trunkTopX = width / 2;
     const trunkTopY = height * 0.65;
     const trunkBottomX = width / 2;

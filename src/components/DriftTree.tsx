@@ -400,6 +400,12 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
       }
     });
 
+    // Set initial canvas dimensions immediately
+    if (containerRef.current) {
+      canvas.width = containerRef.current.clientWidth;
+      canvas.height = containerRef.current.clientHeight;
+    }
+
     resizeObserver.observe(containerRef.current);
 
     const animate = () => {

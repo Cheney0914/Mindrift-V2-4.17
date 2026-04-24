@@ -391,14 +391,16 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const resize = () => {
-      if (containerRef.current) {
-        canvas.width = containerRef.current.clientWidth;
-        canvas.height = containerRef.current.clientHeight;
+    const resizeObserver = new ResizeObserver(entries => {
+      for (let entry of entries) {
+        if (entry.target === containerRef.current) {
+          canvas.width = entry.contentRect.width;
+          canvas.height = entry.contentRect.height;
+        }
       }
-    };
-    resize();
-    window.addEventListener('resize', resize);
+    });
+
+    resizeObserver.observe(containerRef.current);
 
     const animate = () => {
       const width = canvas.width;
@@ -623,14 +625,16 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
             for (let i = 0; i <= Math.ceil(activeSegmentsCount); i++) {
               if (i >= pathIds.length) break;
               const id = pathIds[i];
+              if (!id) continue;
               const p = particlesRef.current.find(part => part.id === id);
               if (p) {
                 const pos = project(p.x, p.y - trunkHeight, p.z);
+                if (!pos || isNaN(pos.x) || isNaN(pos.y)) continue;
                 
                 // If it's a partial segment, interpolate
-                if (i > activeSegmentsCount) {
+                if (i > activeSegmentsCount && i > 0) {
                   const lastId = pathIds[i-1];
-                  const lastP = particlesRef.current.find(part => part.id === lastId);
+                  const lastP = lastId ? particlesRef.current.find(part => part.id === lastId) : null;
                   if (lastP) {
                     const lastPos = project(lastP.x, lastP.y - trunkHeight, lastP.z);
                     const t = activeSegmentsCount - (i - 1);
@@ -984,7 +988,7 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
     animate();
 
     return () => {
-      window.removeEventListener('resize', resize);
+      resizeObserver.disconnect();
       cancelAnimationFrame(animationFrameRef.current);
     };
   }, [clusterData]);

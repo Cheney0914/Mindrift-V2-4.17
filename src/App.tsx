@@ -916,11 +916,12 @@ const SynthesisPage = ({ clusterData }: { clusterData: any }) => {
   }, []);
 
   const thoughtPathFragments = useMemo(() => {
-    if (!clusterData?.thought_path?.fragment_ids) return [];
-    return clusterData.thought_path.fragment_ids
+    const pathIds = result?.thought_path?.fragment_ids || clusterData?.thought_path?.fragment_ids;
+    if (!pathIds) return [];
+    return pathIds
       .map((id: string) => fragments.find(f => f.id === id))
       .filter(Boolean);
-  }, [clusterData, fragments]);
+  }, [result, clusterData, fragments]);
 
   const handleSynthesize = async () => {
     setIsSynthesizing(true);
@@ -1117,13 +1118,14 @@ const SynthesisPage = ({ clusterData }: { clusterData: any }) => {
                     ))}
                   </div>
                   
-                  {clusterData.thought_path.evolution_summary && (
+                  {/* Evolution Summary */}
+                  {(result?.thought_path?.evolution_summary || clusterData?.thought_path?.evolution_summary) && (
                     <motion.div 
                       initial={{ opacity: 0 }}
                       whileInView={{ opacity: 1 }}
                       className="p-6 rounded-2xl bg-primary/5 border border-primary/10 italic font-serif text-sm text-primary/80 text-center"
                     >
-                      "{clusterData.thought_path.evolution_summary}"
+                      "{result?.thought_path?.evolution_summary || clusterData?.thought_path?.evolution_summary}"
                     </motion.div>
                   )}
                 </div>

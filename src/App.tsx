@@ -47,7 +47,16 @@ const CapturePage = () => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [recognition, setRecognition] = useState<any>(null);
+  const [toasts, setToasts] = useState<{ id: string, message: string }[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const addToast = (message: string) => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts(prev => [...prev, { id, message }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  };
 
   useEffect(() => {
     textareaRef.current?.focus();
@@ -124,6 +133,10 @@ const CapturePage = () => {
       // 1. Save to local storage
       storage.saveFragment(newFragment);
       
+      const weeklyCount = storage.getWeeklyCount();
+      addToast(`This is your ${weeklyCount}th record this week.`);
+      setTimeout(() => addToast("Your thought tree is growing 🌱"), 1000);
+      
       // 2. Background AI Processing
       processAI(newFragment);
       
@@ -164,6 +177,12 @@ const CapturePage = () => {
               created_at: new Date().toISOString()
             };
             storage.saveConnection(newConnection);
+            
+            // Show connection toast
+            const daysAgo = Math.floor((new Date().getTime() - new Date(other.created_at).getTime()) / (1000 * 60 * 60 * 24));
+            const timeDesc = daysAgo === 0 ? "earlier today" : daysAgo === 1 ? "yesterday" : `${daysAgo} days ago`;
+            addToast(`Linked to a thought from ${timeDesc}: ${analysis.reasoning}`);
+            break; // Just show one connection toast to avoid spamming
           }
         }
       }
@@ -177,6 +196,25 @@ const CapturePage = () => {
       title={showSuccess ? "Saved" : "Capture"}
       subtitle={!showSuccess ? "Record your scattered thoughts with zero friction." : undefined}
     >
+      <div className="fixed top-12 left-1/2 -translate-x-1/2 z-50 w-full max-w-[320px] pointer-events-none space-y-2 px-6">
+        <AnimatePresence>
+          {toasts.map(toast => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: -20, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8, x: 20 }}
+              className="glass px-4 py-2 text-[10px] uppercase tracking-wider text-white/70 border border-white/10 shadow-2xl text-center pointer-events-auto"
+            >
+              <div className="flex items-center justify-center gap-2">
+                <div className="w-1 h-1 rounded-full bg-primary animate-pulse" />
+                {toast.message}
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
+
       <div className="mt-12 w-full max-w-[320px] mx-auto">
         <AnimatePresence mode="wait">
           {!showSuccess ? (
@@ -738,27 +776,15 @@ const StreamPage = () => {
 };
 
 const TreePage = ({ clusterData, setClusterData }: { clusterData: any, setClusterData: any }) => {
-  const [fragments, setFragments] = useState<Fragment[]>([]);
-  const [connections, setConnections] = useState<Connection[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [fragments, setFragments] = useState<Fragment[]>(storage.getFragments());
+  const [connections, setConnections] = useState<Connection[]>(storage.getConnections());
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchData = () => {
-      setFragments(storage.getFragments());
-      setConnections(storage.getConnections());
-      setLoading(false);
-    };
-
-    fetchData();
+    // Refresh local data in case background processing changed it
+    setFragments(storage.getFragments());
+    setConnections(storage.getConnections());
   }, []);
-
-  useEffect(() => {
-    if (fragments.length >= 3 && !clusterData) {
-      clusterThoughts(fragments.map(f => ({ id: f.id, content: f.content })))
-        .then(setClusterData);
-    }
-  }, [fragments, clusterData, setClusterData]);
 
   const selectedFragment = fragments.find(f => f.id === selectedId);
   const relatedConnections = connections
@@ -776,24 +802,17 @@ const TreePage = ({ clusterData, setClusterData }: { clusterData: any, setCluste
 
   return (
     <div className="w-full min-h-screen bg-[#080810]">
-      {loading ? (
-        <div className="min-h-screen flex flex-col items-center justify-center space-y-4">
-          <div className="w-8 h-8 border-2 border-white/10 border-t-primary rounded-full animate-spin" />
-          <p className="text-[10px] uppercase tracking-widest text-white/20">Syncing with your consciousness...</p>
-        </div>
-      ) : (
-        <DriftTree 
-          fragments={fragments} 
-          connections={connections} 
-          clusterData={clusterData}
-          onNodeClick={(id) => setSelectedId(id)}
-          latestId={latestFragmentId}
-          title="Tree"
-          subtitle="The evolving structure of your drifting consciousness"
-          fragmentsCount={fragments.length}
-          driftsCount={connections.length}
-        />
-      )}
+      <DriftTree 
+        fragments={fragments} 
+        connections={connections} 
+        clusterData={clusterData}
+        onNodeClick={(id) => setSelectedId(id)}
+        latestId={latestFragmentId}
+        title="Tree"
+        subtitle="The evolving structure of your drifting consciousness"
+        fragmentsCount={fragments.length}
+        driftsCount={connections.length}
+      />
 
       {/* Detail Drawer */}
       <AnimatePresence>
@@ -884,16 +903,24 @@ const TreePage = ({ clusterData, setClusterData }: { clusterData: any, setCluste
   );
 };
 
-const SynthesisPage = () => {
+const SynthesisPage = ({ clusterData }: { clusterData: any }) => {
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [result, setResult] = useState<SynthesisResult | null>(null);
   const [history, setHistory] = useState<(SynthesisResult & { created_at: string, id: string })[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const fragments = storage.getFragments();
 
   useEffect(() => {
     setHistory(storage.getSyntheses());
   }, []);
+
+  const thoughtPathFragments = useMemo(() => {
+    if (!clusterData?.thought_path?.fragment_ids) return [];
+    return clusterData.thought_path.fragment_ids
+      .map((id: string) => fragments.find(f => f.id === id))
+      .filter(Boolean);
+  }, [clusterData, fragments]);
 
   const handleSynthesize = async () => {
     setIsSynthesizing(true);
@@ -1048,6 +1075,59 @@ const SynthesisPage = () => {
                   ))}
                 </div>
               </div>
+
+              {/* Journey Visualization */}
+              {thoughtPathFragments.length > 0 && (
+                <div className="space-y-6 pt-4">
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-[0.3em] text-white/30 font-bold">Focus Journey (A → B → C)</span>
+                    <div className="w-8 h-[1px] bg-primary/40" />
+                  </div>
+                  
+                  <div className="relative pl-8 space-y-8 border-l border-white/5 ml-4">
+                    {thoughtPathFragments.map((f: any, i: number) => (
+                      <motion.div
+                        key={f.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        whileInView={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.1 }}
+                        className="relative"
+                      >
+                        {/* Connector Dot */}
+                        <div className="absolute -left-[37px] top-1.5 w-4 h-4 rounded-full bg-[#080810] border border-white/10 flex items-center justify-center">
+                          <span className="text-[8px] font-bold text-primary">{String.fromCharCode(65 + i)}</span>
+                        </div>
+                        
+                        {/* Dynamic Connector Line */}
+                        {i < thoughtPathFragments.length - 1 && (
+                          <div className="absolute -left-[29.5px] top-5.5 bottom-[-32px] w-[1px] bg-gradient-to-b from-primary/40 to-transparent" />
+                        )}
+
+                        <div className="glass p-4 rounded-xl border border-white/5">
+                          <p className="text-[11px] text-white/60 font-light leading-relaxed line-clamp-2">
+                            {f.content}
+                          </p>
+                          <div className="mt-2 flex items-center justify-between">
+                             <span className="text-[8px] uppercase tracking-tighter text-white/20">
+                               {new Date(f.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                             </span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                  
+                  {clusterData.thought_path.evolution_summary && (
+                    <motion.div 
+                      initial={{ opacity: 0 }}
+                      whileInView={{ opacity: 1 }}
+                      className="p-6 rounded-2xl bg-primary/5 border border-primary/10 italic font-serif text-sm text-primary/80 text-center"
+                    >
+                      "{clusterData.thought_path.evolution_summary}"
+                    </motion.div>
+                  )}
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -1136,7 +1216,7 @@ const AnimatedRoutes = ({ clusterData, setClusterData }: { clusterData: any, set
         <Routes location={location}>
           <Route path="/" element={<CapturePage />} />
           <Route path="/stream" element={<StreamPage />} />
-          <Route path="/synthesis" element={<SynthesisPage />} />
+          <Route path="/synthesis" element={<SynthesisPage clusterData={clusterData} />} />
           <Route path="/tree" element={<TreePage clusterData={clusterData} setClusterData={setClusterData} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -1147,7 +1227,7 @@ const AnimatedRoutes = ({ clusterData, setClusterData }: { clusterData: any, set
 
 export default function App() {
   const [hasEntered, setHasEntered] = useState<boolean | null>(null);
-  const [clusterData, setClusterData] = useState<any>(null);
+  const [clusterData, setClusterData] = useState<any>(storage.getClusterData());
 
   useEffect(() => {
     setHasEntered(storage.hasEntered());
@@ -1155,12 +1235,24 @@ export default function App() {
 
   // Background clustering when fragments change or on load
   useEffect(() => {
+    if (hasEntered === null) return;
+    
     const fragments = storage.getFragments();
-    if (fragments.length >= 3) {
+    const cached = storage.getClusterData();
+    
+    // Only re-cluster if we have enough fragments AND (no cache OR fragment count changed)
+    // This is a simple heuristic; a better one would check IDs.
+    if (fragments.length >= 3 && (!cached || cached.fragmentCount !== fragments.length)) {
       clusterThoughts(fragments.map(f => ({ id: f.id, content: f.content })))
-        .then(setClusterData);
+        .then(data => {
+          const dataWithMeta = { ...data, fragmentCount: fragments.length };
+          setClusterData(dataWithMeta);
+          storage.saveClusterData(dataWithMeta);
+        });
+    } else if (cached && !clusterData) {
+      setClusterData(cached);
     }
-  }, [hasEntered]); // Simple trigger on enter, but more importantly:
+  }, [hasEntered]);
 
   const handleEnter = () => {
     storage.setEntered(true);

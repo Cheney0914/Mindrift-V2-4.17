@@ -62,11 +62,13 @@ interface Particle {
   isResonating: boolean;
   resonanceStrength: number;
   pulsePhase: number;
+  pulseProgress: number;
 }
 
 interface Branch {
   theme: string;
   theme_en: string;
+  theme_zh?: string;
   startX: number;
   startY: number;
   startZ: number;
@@ -97,10 +99,12 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [resonanceMode, setResonanceMode] = useState<'pulse' | 'expand' | null>(null);
+  const [resonanceCenterId, setResonanceCenterId] = useState<string | null>(null);
   const [resonatingCount, setResonatingCount] = useState(0);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const pulseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const neuralFlowRef = useRef<{ path: string[], currentSegment: number, progress: number }>({ path: [], currentSegment: 0, progress: 0 });
+  const journeyPathRef = useRef<{ fragment_ids: string[], progress: number, isGrowing: boolean, growthStartTime: number }>({ fragment_ids: [], progress: 0, isGrowing: false, growthStartTime: 0 });
   const starsRef = useRef<{ x: number, y: number, size: number, opacity: number, speed: number }[]>([]);
   const particlesRef = useRef<Particle[]>([]);
   const branchesRef = useRef<Branch[]>([]);
@@ -126,9 +130,9 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
 
   // Auto-transition to expand mode after 5s
   useEffect(() => {
-    if (resonanceMode === 'pulse' && selectedNode) {
+    if (resonanceMode === 'pulse' && resonanceCenterId) {
       pulseTimeoutRef.current = setTimeout(() => {
-        const centerP = particlesRef.current.find(p => p.id === selectedNode.id);
+        const centerP = particlesRef.current.find(p => p.id === resonanceCenterId);
         if (centerP) {
           setResonanceMode('expand');
           setupExpansion(centerP);
@@ -138,7 +142,7 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
     return () => {
       if (pulseTimeoutRef.current) clearTimeout(pulseTimeoutRef.current);
     };
-  }, [resonanceMode, selectedNode]);
+  }, [resonanceMode, resonanceCenterId]);
 
   // Initialize branches and particles when clusterData or fragments change
   useEffect(() => {
@@ -186,6 +190,7 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
         newBranches.push({
           theme: c.theme,
           theme_en: c.theme_en,
+          theme_zh: c.theme_zh,
           startX: 0,
           startY: 0,
           startZ: 0,
@@ -201,7 +206,7 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
 
         // Use sub-themes from AI instead of generic ones
         const subThemes = c.sub_themes || [];
-        subThemes.forEach((st, j) => {
+        subThemes.forEach((st: any, j) => {
           const t = 0.4 + (j / subThemes.length) * 0.4;
           const sx = Math.pow(1 - t, 2) * 0 + 2 * (1 - t) * t * cpX + Math.pow(t, 2) * endX;
           const sy = Math.pow(1 - t, 2) * 0 + 2 * (1 - t) * t * cpY + Math.pow(t, 2) * endY;
@@ -216,6 +221,7 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
           newBranches.push({
             theme: st.label,
             theme_en: st.label_en,
+            theme_zh: st.label_zh,
             startX: sx,
             startY: sy,
             startZ: sz,
@@ -298,7 +304,8 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
           transitionProgress: 1,
           isResonating: false,
           resonanceStrength: 0,
-          pulsePhase: Math.random() * Math.PI * 2
+          pulsePhase: Math.random() * Math.PI * 2,
+          pulseProgress: 1
         });
       });
       particlesRef.current = newParticles;
@@ -367,7 +374,8 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
           transitionProgress: 1,
           isResonating: false,
           resonanceStrength: 0,
-          pulsePhase: 0
+          pulsePhase: 0,
+          pulseProgress: 1
         });
       });
       particlesRef.current = newParticles;
@@ -405,6 +413,12 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
       ctx.clearRect(0, 0, width, height);
 
       // 1. Background (Fixed)
+      const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
+      bgGradient.addColorStop(0, '#080810');
+      bgGradient.addColorStop(1, '#0a0a1a');
+      ctx.fillStyle = bgGradient;
+      ctx.fillRect(0, 0, width, height);
+
       // Neural Horizon Line (Subtle blurred glow at the roots base)
       const horizonY = height * 0.75;
       
@@ -422,12 +436,6 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
         ctx.fillStyle = `rgba(255, 255, 255, ${star.opacity * twinkle * 0.6})`;
         ctx.fill();
       });
-
-      const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
-      bgGradient.addColorStop(0, '#080810');
-      bgGradient.addColorStop(1, '#0a0a1a');
-      ctx.fillStyle = bgGradient;
-      ctx.fillRect(0, 0, width, height);
 
       // Draw horizon glow over background but under tree
       const horizonGrd = ctx.createLinearGradient(0, horizonY - 150, 0, horizonY + 50);
@@ -562,8 +570,20 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
             ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
             ctx.font = branch.isSubBranch ? 'italic 10px serif' : 'bold italic 13px serif';
             ctx.textAlign = 'center';
-            const label = branch.theme_en; 
-            ctx.fillText(label, end.x, end.y - 12);
+            const label = branch.theme_zh && branch.theme_en 
+              ? `${branch.theme_zh}\n${branch.theme_en}`
+              : branch.theme_en || branch.theme;
+            
+            // Handle multi-line drawing for dual language
+            if (label.includes('\n')) {
+              const lines = label.split('\n');
+              ctx.fillText(lines[0], end.x, end.y - 18);
+              ctx.font = branch.isSubBranch ? 'italic 8px serif' : 'italic 10px serif';
+              ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+              ctx.fillText(lines[1], end.x, end.y - 6);
+            } else {
+              ctx.fillText(label, end.x, end.y - 12);
+            }
           }
         });
       }
@@ -571,8 +591,118 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
       // 4. Update and Draw Particles (Growth 0.7 - 1.0)
       const nodeProgress = Math.max(0, Math.min(1, (growthProgressRef.current - 0.7) / 0.3));
       if (nodeProgress > 0) {
-        // Pulse settings
-        // time is already defined above
+        // --- Draw Thought Path (Evolutionary Trace) ---
+        if (clusterData?.thought_path?.fragment_ids && clusterData.thought_path.fragment_ids.length > 1) {
+          const pathIds = clusterData.thought_path.fragment_ids;
+          
+          // Determine if we should show/grow the path
+          const journey = journeyPathRef.current;
+          let shouldDraw = false;
+          let currentGrowth = 1;
+
+          if (journey.isGrowing) {
+            const elapsed = Date.now() - journey.growthStartTime;
+            const growthDuration = 3000; // 3 seconds to complete the whole path
+            currentGrowth = Math.min(1, elapsed / growthDuration);
+            shouldDraw = true;
+          } else if (selectedNode === null && !resonanceMode) {
+             // If nothing is active, show the full path statically but slightly dimmed
+             shouldDraw = true;
+             currentGrowth = 1;
+          }
+
+          if (shouldDraw) {
+            ctx.save();
+            
+            // Draw segments based on growth
+            const totalSegments = pathIds.length - 1;
+            const activeSegmentsCount = currentGrowth * totalSegments;
+
+            ctx.beginPath();
+            let first = true;
+            for (let i = 0; i <= Math.ceil(activeSegmentsCount); i++) {
+              if (i >= pathIds.length) break;
+              const id = pathIds[i];
+              const p = particlesRef.current.find(part => part.id === id);
+              if (p) {
+                const pos = project(p.x, p.y - trunkHeight, p.z);
+                
+                // If it's a partial segment, interpolate
+                if (i > activeSegmentsCount) {
+                  const lastId = pathIds[i-1];
+                  const lastP = particlesRef.current.find(part => part.id === lastId);
+                  if (lastP) {
+                    const lastPos = project(lastP.x, lastP.y - trunkHeight, lastP.z);
+                    const t = activeSegmentsCount - (i - 1);
+                    const fx = lastPos.x + (pos.x - lastPos.x) * t;
+                    const fy = lastPos.y + (pos.y - lastPos.y) * t;
+                    ctx.lineTo(fx, fy);
+                  }
+                } else {
+                  if (first) {
+                    ctx.moveTo(pos.x, pos.y);
+                    first = false;
+                  } else {
+                    ctx.lineTo(pos.x, pos.y);
+                  }
+                }
+              }
+            }
+
+            // Style for the "Journey" line
+            ctx.strokeStyle = `rgba(255, 255, 255, ${journey.isGrowing ? 0.4 : 0.15})`;
+            ctx.setLineDash([5, 15]);
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // Flowing light along the path (only drawn if fully grown or enough revealed)
+            if (activeSegmentsCount > 0.1) {
+              journey.progress += 0.005;
+              if (journey.progress > 1) journey.progress = 0;
+              
+              const prog = journey.progress * currentGrowth; // Scale flow with growth
+              const totalPoints = pathIds.length;
+              if (totalPoints > 1) {
+                const segmentIdx = Math.floor(prog * (totalPoints - 1));
+                const segmentProgress = (prog * (totalPoints - 1)) % 1;
+                
+                const p1 = particlesRef.current.find(part => part.id === pathIds[segmentIdx]);
+                const p2 = particlesRef.current.find(part => part.id === pathIds[segmentIdx + 1]);
+                
+                if (p1 && p2) {
+                  const pos1 = project(p1.x, p1.y - trunkHeight, p1.z);
+                  const pos2 = project(p2.x, p2.y - trunkHeight, p2.z);
+                  
+                  const fx = pos1.x + (pos2.x - pos1.x) * segmentProgress;
+                  const fy = pos1.y + (pos2.y - pos1.y) * segmentProgress;
+                  
+                  // Expanding pulse at current focus point
+                  ctx.beginPath();
+                  ctx.arc(fx, fy, 4, 0, Math.PI * 2);
+                  ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                  ctx.shadowBlur = 15;
+                  ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+                  ctx.fill();
+                  ctx.shadowBlur = 0;
+                }
+              }
+
+              // Label A, B, C for the path
+              for (let i = 0; i < pathIds.length; i++) {
+                if (i > activeSegmentsCount) break;
+                const lp = particlesRef.current.find(part => part.id === pathIds[i]);
+                if (lp) {
+                  const lPos = project(lp.x, lp.y - trunkHeight, lp.z);
+                  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                  ctx.font = 'bold 10px sans-serif';
+                  ctx.fillText(String.fromCharCode(65 + i), lPos.x, lPos.y - 15);
+                }
+              }
+            }
+            ctx.restore();
+          }
+        }
 
         // First update all particle positions
         particlesRef.current.forEach(p => {
@@ -647,13 +777,14 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
 
         // 5. Draw Inter-node Connections & Expansion Lines
         if (nodeProgress === 1) {
-          if (resonanceMode === 'expand' && selectedNode) {
-            const centerP = particlesRef.current.find(p => p.id === selectedNode.id);
+          const activeCenterId = resonanceCenterId || selectedNode?.id;
+          if (resonanceMode === 'expand' && activeCenterId) {
+            const centerP = particlesRef.current.find(p => p.id === activeCenterId);
             if (centerP) {
               const posCenter = project(centerP.x, centerP.y - trunkHeight, centerP.z);
               
               particlesRef.current.forEach(p => {
-                if (p.isResonating && p.id !== selectedNode.id) {
+                if (p.isResonating && p.id !== activeCenterId) {
                   const posTarget = project(p.x, p.y - trunkHeight, p.z);
                   
                   // Draw Connection line
@@ -664,11 +795,11 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
                   ctx.moveTo(posCenter.x, posCenter.y);
                   ctx.lineTo(posTarget.x, posTarget.y);
                   ctx.stroke();
-
+ 
                   // Find connection reasoning for label
                   const conn = connections.find(c => 
-                    (c.fragment_a_id === selectedNode.id && c.fragment_b_id === p.id) ||
-                    (c.fragment_b_id === selectedNode.id && c.fragment_a_id === p.id)
+                    (c.fragment_a_id === activeCenterId && c.fragment_b_id === p.id) ||
+                    (c.fragment_b_id === activeCenterId && c.fragment_a_id === p.id)
                   );
                   
                   if (conn?.reasoning) {
@@ -762,46 +893,70 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
 
         // 6. Draw Particles and Pulses
         particlesRef.current.forEach(p => {
-          const isSelected = selectedNode?.id === p.id;
+          const isSelected = (selectedNode?.id === p.id) || (resonanceCenterId === p.id);
           const pos = project(p.x, p.y - trunkHeight, p.z);
           const flash = (Math.sin(p.flashPhase) + 1) / 2;
           
           const branch = branchesRef.current[p.clusterIndex];
-          const baseColor = branch?.color || 'rgba(255, 78, 0';
+          const clusterColor = branch?.color || 'rgba(255, 78, 0';
+          
+          // Determine static node color and size based on relationship
+          let nodeColor = clusterColor;
+          let nodeSizeMult = 1;
+          let glowIntensity = 0.4 + flash * 0.4;
+          let shadowBlur = (5 + flash * 10);
 
-          // Pulse Drawing
-          if (resonanceMode && (isSelected || p.isResonating)) {
-            const speedMultiplier = p.resonanceStrength > 0.7 ? 1.0 : p.resonanceStrength > 0.4 ? 0.7 : 0.4;
-            const pulseColor = p.resonanceStrength > 0.7 ? 'rgba(255, 140, 0' : 'rgba(255, 200, 100';
-            
-            p.pulsePhase += 0.005 * speedMultiplier; // Slowed down from 0.01
-            const ringCount = 3;
-            for (let i = 0; i < ringCount; i++) {
-              const ringPhase = (p.pulsePhase + (i / ringCount)) % 1;
-              const radius = 5 + ringPhase * 40;
-              const alpha = (1 - ringPhase) * 0.4;
-              
-              ctx.beginPath();
-              ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-              ctx.strokeStyle = isSelected ? `rgba(255, 255, 255, ${alpha})` : `${pulseColor}, ${alpha})`;
-              ctx.lineWidth = 1;
-              ctx.stroke();
+          if (selectedNode || resonanceCenterId) {
+            if (isSelected) {
+              nodeSizeMult = 1.8;
+              glowIntensity = 1; // Solid glow for selected
+              shadowBlur = 20;
+              nodeColor = 'rgba(255, 255, 255'; // Highlight selected with white/bright glow
+            } else if (p.isResonating) {
+              // High correlation (strength > 0.6) uses theme color, others use gray
+              if (p.resonanceStrength > 0.6) {
+                nodeSizeMult = 1.3;
+                nodeColor = clusterColor;
+              } else {
+                nodeSizeMult = 0.9;
+                nodeColor = 'rgba(100, 100, 110'; // Static gray for low correlation
+              }
             }
           }
 
+          // Pulse Drawing (One-time pulse for associated nodes)
+          if (p.pulseProgress < 1) {
+            p.pulseProgress += 0.02; // Roughly 50 frames (around 0.8s)
+            
+            const ringPhase = p.pulseProgress;
+            const radius = (p.size / 2) + ringPhase * 50;
+            const alpha = (1 - ringPhase) * 0.6;
+            
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+            ctx.strokeStyle = isSelected ? `rgba(255, 255, 255, ${alpha})` : `${nodeColor}, ${alpha})`;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+          }
+
           // Node styling
-          const targetOpacity = resonanceMode ? (isSelected || p.isResonating ? 1 : 0.2) : p.opacity; // Changed to 0.2
-          // Smooth opacity transition
+          const baseOpacity = 0.8; // standard visibility
+          let targetOpacity = baseOpacity;
+
+          if (resonanceMode) {
+            targetOpacity = (isSelected || p.isResonating) ? 1 : 0.15;
+          } else if (selectedNode) {
+            targetOpacity = isSelected ? 1 : 0.4;
+          }
+
           p.opacity = p.opacity + (targetOpacity - p.opacity) * 0.1;
           
-          const sizeMult = isSelected ? 1.5 : 1;
-          
-          ctx.shadowBlur = (5 + flash * 10) * sizeMult;
-          ctx.shadowColor = `${baseColor}, ${0.4 + flash * 0.4})`;
+          ctx.shadowBlur = shadowBlur * nodeSizeMult;
+          ctx.shadowColor = `${nodeColor}, ${glowIntensity})`;
           
           ctx.beginPath();
-          ctx.arc(pos.x, pos.y, (p.size / 2) * nodeProgress * sizeMult, 0, Math.PI * 2);
-          ctx.fillStyle = `${baseColor}, ${p.opacity * nodeProgress * (0.6 + flash * 0.4)})`;
+          ctx.arc(pos.x, pos.y, (p.size / 2) * nodeProgress * nodeSizeMult, 0, Math.PI * 2);
+          ctx.fillStyle = `${nodeColor}, ${p.opacity * nodeProgress * (0.6 + flash * 0.4)})`;
           ctx.fill();
           ctx.shadowBlur = 0;
 
@@ -875,29 +1030,33 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
     }
 
     if (clickedParticle) {
-      // Transition logic
-      if (selectedNode?.id === clickedParticle.id && resonanceMode === 'pulse') {
-        // LAYER 2: EXPAND (Manual click)
-        if (pulseTimeoutRef.current) clearTimeout(pulseTimeoutRef.current);
-        setResonanceMode('expand');
-        setupExpansion(clickedParticle);
-      } else if (resonanceMode === 'expand' && clickedParticle.id !== selectedNode?.id && clickedParticle.isResonating) {
-        // CLICK SATELLITE NODE: Transition to new center
-        setResonanceMode('pulse');
-        handlePulseStart(clickedParticle);
-      } else {
-        // LAYER 1: PULSE (Initial or new selection)
-        handlePulseStart(clickedParticle);
-      }
+      // CLEAR old resonance when picking a new one to view
+      setResonanceMode(null);
+      setResonanceCenterId(null);
+      particlesRef.current.forEach(p => {
+        p.isResonating = false;
+        p.pulseProgress = 1;
+      });
+
+      // LAYER 1: Select node (Open drawer)
+      setSelectedNode({
+        type: 'fragment',
+        content: clickedParticle.content,
+        id: clickedParticle.id,
+        clusterTheme: clusterData?.clusters[clickedParticle.clusterIndex]?.theme
+      });
+      setHoveredNodeId(null);
     } else {
       // CLICK BLANK
       isDraggingRef.current = true;
       setResonanceMode(null);
+      setResonanceCenterId(null);
       setSelectedNode(null);
       setHoveredNodeId(null);
       particlesRef.current.forEach(p => {
         p.isPaused = false;
         p.isResonating = false;
+        p.pulseProgress = 1;
         p.targetX = undefined;
         p.targetY = undefined;
         p.targetZ = undefined;
@@ -907,9 +1066,7 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
   };
 
   const handlePulseStart = (clickedParticle: Particle) => {
-    const isNewSelection = selectedNode?.id !== clickedParticle.id;
-    
-    // Reset old selection
+    // Reset old resonance states
     particlesRef.current.forEach(p => {
       p.isPaused = false;
       p.isResonating = false;
@@ -918,8 +1075,9 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
       p.targetY = undefined;
       p.targetZ = undefined;
     });
-
+ 
     clickedParticle.isPaused = true;
+    setResonanceCenterId(clickedParticle.id);
     setResonanceMode('pulse');
     
     const related = connections.filter(c => 
@@ -933,20 +1091,16 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
       if (p.id === clickedParticle.id) {
         p.isResonating = true;
         p.resonanceStrength = 1;
+        p.pulseProgress = 0; // Trigger once
       } else if (conn) {
         p.isResonating = true;
         p.resonanceStrength = conn.strength || 0.5;
         p.pulsePhase = Math.random() * Math.PI * 2;
+        p.pulseProgress = 0; // Trigger once
       } else {
         p.isResonating = false;
+        p.pulseProgress = 1;
       }
-    });
-
-    setSelectedNode({
-      type: 'fragment',
-      content: clickedParticle.content,
-      id: clickedParticle.id,
-      clusterTheme: clusterData?.clusters[clickedParticle.clusterIndex]?.theme
     });
     
     setHoveredNodeId(null);
@@ -1165,6 +1319,10 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
 
       {/* Visual Legend */}
       <div className="absolute bottom-28 right-8 z-40 pointer-events-none select-none text-right space-y-2">
+        <div className="flex items-center justify-end gap-2 text-primary/80">
+          <span className="text-[9px] uppercase tracking-widest font-bold">Focus Path (A→B→C)</span>
+          <div className="w-12 h-[1px] bg-white/40 dashed-border" />
+        </div>
         <div className="flex items-center justify-end gap-2">
           <span className="text-[9px] uppercase tracking-widest text-white/30 font-bold">Branch (Theme)</span>
           <div className="w-2 h-2 rounded-full bg-primary shadow-[0_0_8px_rgba(255,78,0,0.5)]" />
@@ -1174,6 +1332,25 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
           <div className="w-2 h-2 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
         </div>
       </div>
+
+      {/* Thought Path Summary */}
+      {clusterData?.thought_path && (
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="absolute bottom-28 left-8 z-40 max-w-[280px] space-y-3 pointer-events-auto"
+        >
+          <div className="flex items-center gap-2">
+            <div className="w-1 h-3 bg-primary rounded-full" />
+            <span className="text-[10px] uppercase tracking-widest text-white/60 font-bold">Recent Focus Journey</span>
+          </div>
+          <div className="glass-dark p-4 rounded-xl border border-white/5 shadow-xl">
+            <p className="text-[11px] text-white/70 leading-relaxed font-serif italic">
+              {clusterData.thought_path.evolution_summary}
+            </p>
+          </div>
+        </motion.div>
+      )}
 
       {/* Resonance Subtitle Bar */}
       {resonanceMode && (
@@ -1229,8 +1406,22 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
               </div>
               <button
                 onClick={() => {
+                  if (selectedNode) {
+                    const centerP = particlesRef.current.find(p => p.id === selectedNode.id);
+                    if (centerP) {
+                      handlePulseStart(centerP);
+                      // Trigger focus path growth after the pulse has some time to shine
+                      setTimeout(() => {
+                        journeyPathRef.current.isGrowing = true;
+                        journeyPathRef.current.growthStartTime = Date.now();
+                        // Reset growing after some time
+                        setTimeout(() => {
+                          journeyPathRef.current.isGrowing = false;
+                        }, 4000);
+                      }, 1000);
+                    }
+                  }
                   setSelectedNode(null);
-                  particlesRef.current.forEach(p => p.isPaused = false);
                 }}
                 className="p-1.5 rounded-full bg-white/5 text-white/40 hover:text-white transition-all flex-shrink-0"
               >

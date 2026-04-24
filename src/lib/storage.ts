@@ -5,13 +5,23 @@ const STORAGE_KEYS = {
   FRAGMENTS: 'drift_fragments',
   CONNECTIONS: 'drift_connections',
   ENTERED: 'drift_has_entered',
-  SYNTHESES: 'drift_syntheses'
+  SYNTHESES: 'drift_syntheses',
+  CLUSTER_DATA: 'drift_cluster_data'
 };
 
 export const storage = {
   getFragments: (): Fragment[] => {
     const data = localStorage.getItem(STORAGE_KEYS.FRAGMENTS);
     return data ? JSON.parse(data) : [];
+  },
+
+  getClusterData: (): any | null => {
+    const data = localStorage.getItem(STORAGE_KEYS.CLUSTER_DATA);
+    return data ? JSON.parse(data) : null;
+  },
+
+  saveClusterData: (data: any): void => {
+    localStorage.setItem(STORAGE_KEYS.CLUSTER_DATA, JSON.stringify(data));
   },
 
   saveFragment: (fragment: Fragment): void => {
@@ -69,5 +79,12 @@ export const storage = {
 
   setEntered: (val: boolean): void => {
     localStorage.setItem(STORAGE_KEYS.ENTERED, String(val));
+  },
+
+  getWeeklyCount: (): number => {
+    const fragments = storage.getFragments();
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    return fragments.filter(f => new Date(f.created_at) >= oneWeekAgo).length;
   }
 };

@@ -1,6 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || "" });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export const generateEmbedding = async (text: string): Promise<number[]> => {
   try {
@@ -99,20 +99,26 @@ export const synthesizeThoughts = async (thoughts: string[]): Promise<SynthesisR
 
 export interface ClusterResult {
   clusters: {
-    theme: string;          // 主题词，3-5个字
-    theme_en: string;       // 英文主题词
-    reasoning: string;      // 为什么这些想法属于同一主题，一句话
-    fragment_ids: string[]; // 属于这个主题的 fragment id 列表
-    sub_themes: {           // 子话题标注
+    theme: string;          // Theme word, 3-5 characters
+    theme_en: string;       // English theme word
+    theme_zh: string;       // Chinese theme word
+    reasoning: string;      // Why these thoughts belong to the same theme
+    fragment_ids: string[]; // List of fragment IDs belonging to this theme
+    sub_themes: {           // Sub-theme labels
       label: string;
       label_en: string;
+      label_zh: string;
     }[];
   }[];
   connections: {
-    theme_a: string;        // 主题A的 theme_en
-    theme_b: string;        // 主题B的 theme_en
-    bridge: string;         // 两个主题的底层连接，最多15个字
+    theme_a: string;        // theme_en of Theme A
+    theme_b: string;        // theme_en of Theme B
+    bridge: string;         // Underlying connection, max 15 characters
   }[];
+  thought_path?: {
+    fragment_ids: string[];
+    evolution_summary: string;
+  };
 }
 
 export const clusterThoughts = async (
@@ -128,16 +134,17 @@ Here are all their thought fragments:
 ${fragments.map(f => `ID: ${f.id}\nContent: ${f.content}`).join('\n---\n')}
 
 Your task:
-1. Group these fragments into 5-8 thematic clusters based on underlying meaning.
-2. For each cluster, give a short theme label (3-5 words in English).
-3. For each cluster, identify 2-3 specific "sub-themes" or "key aspects" that further summarize the thoughts in that cluster.
-4. Identify which 2-3 clusters have the deepest underlying connection.
-5. For connected clusters, write one bridge sentence explaining WHY they connect at a deeper level.
+1. Group these fragments into 6-10 distinct thematic clusters (main branches of a tree) based on underlying meaning and psychological patterns.
+2. For each cluster, provide a high-level theme (3-5 words in English) and a Chinese translation.
+3. For each cluster, identify 3-4 specific "sub-themes" (petals) that further refine the thoughts within that cluster.
+4. Identify which 3-4 clusters have the deepest underlying connection.
+5. For connected clusters, write an insightful bridge sentence explaining the hidden psychological or logical link.
+6. Create a "Thought Path" (Evolutionary Trace) for the 5-7 most recent fragments. This path should show a logical progression or "chain of focus" from one idea to the next, explaining how the user's attention evolved from point A to B to C.
 
 Rules:
-- Every fragment must belong to exactly one cluster.
-- Cluster themes should reveal unconscious patterns, not just surface topics.
-- Bridge connections should be insightful, not obvious.`,
+- Themes must reveal unconscious patterns and core motivations, not just surface categories.
+- The Thought Path must be a sequential narrative of core recent thoughts, demonstrating the growth of ideas.
+- Bridge connections must represent a "leap" in insight.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -150,6 +157,7 @@ Rules:
                 properties: {
                   theme: { type: Type.STRING },
                   theme_en: { type: Type.STRING },
+                  theme_zh: { type: Type.STRING },
                   reasoning: { type: Type.STRING },
                   fragment_ids: { 
                     type: Type.ARRAY, 
@@ -161,13 +169,14 @@ Rules:
                       type: Type.OBJECT,
                       properties: {
                         label: { type: Type.STRING },
-                        label_en: { type: Type.STRING }
+                        label_en: { type: Type.STRING },
+                        label_zh: { type: Type.STRING }
                       },
-                      required: ["label", "label_en"]
+                      required: ["label", "label_en", "label_zh"]
                     }
                   }
                 },
-                required: ["theme", "theme_en", "reasoning", "fragment_ids", "sub_themes"]
+                required: ["theme", "theme_en", "theme_zh", "reasoning", "fragment_ids", "sub_themes"]
               }
             },
             connections: {
@@ -181,9 +190,20 @@ Rules:
                 },
                 required: ["theme_a", "theme_b", "bridge"]
               }
+            },
+            thought_path: {
+              type: Type.OBJECT,
+              properties: {
+                fragment_ids: { 
+                  type: Type.ARRAY, 
+                  items: { type: Type.STRING } 
+                },
+                evolution_summary: { type: Type.STRING }
+              },
+              required: ["fragment_ids", "evolution_summary"]
             }
           },
-          required: ["clusters", "connections"]
+          required: ["clusters", "connections", "thought_path"]
         }
       }
     });

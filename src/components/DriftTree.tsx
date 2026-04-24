@@ -292,11 +292,33 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
         const clusterIndex = clusterIdx === -1 ? 0 : clusterIdx;
         
         const clusterBranches = newBranches.filter(b => b.clusterIndex === clusterIndex);
-        
+        const subBranches = clusterBranches.filter(b => b.isSubBranch);
+        const mainBranch = clusterBranches.find(b => !b.isSubBranch);
+
         const hash = hashString(f.id);
-        const branch = clusterBranches[hash % clusterBranches.length] || newBranches[0];
+        
+        // Match fragment content with sub-theme labels for smarter placement
+        let branch = mainBranch || newBranches[0];
+        if (subBranches.length > 0) {
+          const contentLower = f.content.toLowerCase();
+          const matchedSub = subBranches.find(sb => 
+            (sb.theme_en && contentLower.includes(sb.theme_en.toLowerCase())) || 
+            (sb.theme_zh && contentLower.includes(sb.theme_zh)) ||
+            (sb.theme && contentLower.includes(sb.theme.toLowerCase()))
+          );
+          
+          if (matchedSub) {
+            branch = matchedSub;
+          } else {
+            // Favor sub-branches (80% probability) to spread thoughts across the canopy
+            branch = (hash % 100 < 80) ? subBranches[hash % subBranches.length] : (mainBranch || subBranches[0]);
+          }
+        }
+
         const isConnected = connectedIds.has(f.id);
-        const t = branch.isSubBranch ? (0.2 + (hash % 80) / 100) : (0.3 + (hash % 60) / 100);
+        // If on main branch, stay closer to the tip (0.65 - 0.95) to keep the trunk clear
+        // If on sub branch, distribute across the length (0.3 - 0.95)
+        const t = branch.isSubBranch ? (0.3 + (hash % 65) / 100) : (0.65 + (hash % 30) / 100);
         
         const px = Math.pow(1 - t, 2) * branch.startX + 2 * (1 - t) * t * branch.cpX + Math.pow(t, 2) * branch.endX;
         const py = Math.pow(1 - t, 2) * branch.startY + 2 * (1 - t) * t * branch.cpY + Math.pow(t, 2) * branch.endY;
@@ -391,7 +413,8 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
         const hash = hashString(f.id);
         const clusterIndex = hash % naiveClusterCount;
         const branch = newBranches[clusterIndex];
-        const t = 0.3 + (hash % 60) / 100;
+        // Keep particles away from the trunk in naive mode too
+        const t = 0.6 + (hash % 35) / 100;
         
         const px = Math.pow(1 - t, 2) * branch.startX + 2 * (1 - t) * t * branch.cpX + Math.pow(t, 2) * branch.endX;
         const py = Math.pow(1 - t, 2) * branch.startY + 2 * (1 - t) * t * branch.cpY + Math.pow(t, 2) * branch.endY;

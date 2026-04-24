@@ -1,7 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : "") || "";
-const ai = new GoogleGenAI({ apiKey });
+const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || "" });
 
 export const generateEmbedding = async (text: string): Promise<number[]> => {
   try {
@@ -58,44 +57,33 @@ export const analyzeConnection = async (
 export interface SynthesisResult {
   text: string;
   keywords: string[];
-  thought_path?: {
-    fragment_ids: string[];
-    evolution_summary: string;
-  };
 }
 
-export const synthesizeThoughts = async (fragments: { content: string; id: string }[]): Promise<SynthesisResult | null> => {
+export const synthesizeThoughts = async (thoughts: string[]): Promise<SynthesisResult | null> => {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Here are all the user's thought records for this week: ${JSON.stringify(fragments)}
+      contents: `Here are all the user's thought records for this week: ${JSON.stringify(thoughts)}
       
       Please analyze the underlying connection logic of these records:
       1. How are these thoughts connected?
       2. Which keywords link the different thoughts together?
       3. What is the core theme of this week's thinking?
-      4. Create a "Thought Path" (Evolutionary Trace) using 5-7 of the provided fragment IDs. Show how the user's focus evolved from idea A to B to C.`,
+      
+      Please output in two formats:
+      - Text version: 2-3 fluent paragraphs
+      - Keyword version: 5-8 core tags`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            text: { type: Type.STRING },
+            text: { type: Type.STRING, description: "2-3 fluent paragraphs analyzing the thoughts" },
             keywords: { 
               type: Type.ARRAY, 
-              items: { type: Type.STRING }
+              items: { type: Type.STRING },
+              description: "5-8 core tags"
             },
-            thought_path: {
-              type: Type.OBJECT,
-              properties: {
-                fragment_ids: { 
-                  type: Type.ARRAY, 
-                  items: { type: Type.STRING } 
-                },
-                evolution_summary: { type: Type.STRING }
-              },
-              required: ["fragment_ids", "evolution_summary"]
-            }
           },
           required: ["text", "keywords"],
         },

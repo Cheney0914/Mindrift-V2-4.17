@@ -102,9 +102,10 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
   const [resonanceCenterId, setResonanceCenterId] = useState<string | null>(null);
   const [resonatingCount, setResonatingCount] = useState(0);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const pulseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const neuralFlowRef = useRef<{ path: string[], currentSegment: number, progress: number }>({ path: [], currentSegment: 0, progress: 0 });
-  const journeyPathRef = useRef<{ fragment_ids: string[], progress: number, isGrowing: boolean, growthStartTime: number }>({ fragment_ids: [], progress: 0, isGrowing: false, growthStartTime: 0 });
+  const journeyPathRef = useRef<{ fragment_ids: string[], progress: number }>({ fragment_ids: [], progress: 0 });
   const starsRef = useRef<{ x: number, y: number, size: number, opacity: number, speed: number }[]>([]);
   const particlesRef = useRef<Particle[]>([]);
   const branchesRef = useRef<Branch[]>([]);
@@ -126,6 +127,28 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
     growthProgressRef.current = 0;
   }, []);
 
+  // Separate ResizeObserver
+  useEffect(() => {
+    if (!containerRef.current || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target === containerRef.current) {
+          const { width, height } = entry.contentRect;
+          if (width > 0 && height > 0) {
+            canvas.width = width;
+            canvas.height = height;
+            setDimensions({ width, height });
+          }
+        }
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
+
   const isClustering = !clusterData && fragments.length >= 3;
 
   // Auto-transition to expand mode after 5s
@@ -144,11 +167,13 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
     };
   }, [resonanceMode, resonanceCenterId]);
 
-  // Initialize branches and particles when clusterData or fragments change
+  // Initialize branches and particles when clusterData, fragments or container size changes
   useEffect(() => {
     if (!containerRef.current) return;
     const width = containerRef.current.clientWidth;
     const height = containerRef.current.clientHeight;
+
+    if (width === 0 || height === 0) return; // Wait for size
 
     const trunkTopX = width / 2;
     const trunkTopY = height * 0.65;
@@ -382,7 +407,7 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
       // Note: We don't reset growthProgress here if it's already running
       if (growthProgressRef.current === 0) growthProgressRef.current = 0.01;
     }
-  }, [clusterData, fragments, latestId]);
+  }, [clusterData, fragments.length, dimensions.width, dimensions.height]);
 
   // Animation Loop
   useEffect(() => {
@@ -391,41 +416,17 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const resizeObserver = new ResizeObserver(entries => {
-      for (let entry of entries) {
-        if (entry.target === containerRef.current) {
-          canvas.width = entry.contentRect.width;
-          canvas.height = entry.contentRect.height;
-        }
-      }
-    });
-
-    // Set initial canvas dimensions immediately to avoid black screen on first mount
-    if (containerRef.current) {
-      canvas.width = containerRef.current.clientWidth;
-      canvas.height = containerRef.current.clientHeight;
-    }
-
-    resizeObserver.observe(containerRef.current);
-
-    let errorCount = 0;
     const animate = () => {
-      try {
-        const width = canvas.width;
-        const height = canvas.height;
-        
-        if (width === 0 || height === 0) {
-          animationFrameRef.current = requestAnimationFrame(animate);
-          return;
-        }
+      const width = canvas.width;
+      const height = canvas.height;
 
-        // Update Growth
-        if (growthProgressRef.current < 1) {
-          growthProgressRef.current += 0.008; // Faster growth
-        }
+      // Update Growth
+      if (growthProgressRef.current < 1) {
+        growthProgressRef.current += 0.008; // Faster growth
+      }
 
-        const time = Date.now() * 0.001;
-        ctx.clearRect(0, 0, width, height);
+      const time = Date.now() * 0.001;
+      ctx.clearRect(0, 0, width, height);
 
       // 1. Background (Fixed)
       const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
@@ -540,12 +541,9 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
           ctx.stroke();
           
           // Glowing fibers
-          if (Math.random() > 0.98) {
-            const isMobile = window.innerWidth < 768;
-            if (!isMobile) {
-              ctx.shadowBlur = 10;
-              ctx.shadowColor = 'rgba(255, 78, 0, 0.8)';
-            }
+          if (Math.random() > 0.95) {
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = 'rgba(255, 78, 0, 0.8)';
             ctx.strokeStyle = 'rgba(255, 150, 0, 0.4)';
             ctx.stroke();
             ctx.shadowBlur = 0;
@@ -578,12 +576,9 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
           ctx.strokeStyle = `${branch.color}, 0.3)`;
           ctx.lineWidth = 3 * (1 - branchProgress * 0.5);
           
-          // Glow effect for branches - reduced on mobile
-          const isMobile = window.innerWidth < 768;
-          if (!isMobile) {
-            ctx.shadowBlur = 8 * branchProgress;
-            ctx.shadowColor = `${branch.color}, 0.5)`;
-          }
+          // Glow effect for branches
+          ctx.shadowBlur = 8 * branchProgress;
+          ctx.shadowColor = `${branch.color}, 0.5)`;
           ctx.stroke();
           ctx.shadowBlur = 0;
 
@@ -615,116 +610,72 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
         // --- Draw Thought Path (Evolutionary Trace) ---
         if (clusterData?.thought_path?.fragment_ids && clusterData.thought_path.fragment_ids.length > 1) {
           const pathIds = clusterData.thought_path.fragment_ids;
+          ctx.save();
+          ctx.beginPath();
           
-          // Determine if we should show/grow the path
-          const journey = journeyPathRef.current;
-          let shouldDraw = false;
-          let currentGrowth = 1;
-
-          if (journey.isGrowing) {
-            const elapsed = Date.now() - journey.growthStartTime;
-            const growthDuration = 3000; // 3 seconds to complete the whole path
-            currentGrowth = Math.min(1, elapsed / growthDuration);
-            shouldDraw = true;
-          } else if (selectedNode === null && !resonanceMode) {
-             // If nothing is active, show the full path statically but slightly dimmed
-             shouldDraw = true;
-             currentGrowth = 1;
-          }
-
-          if (shouldDraw) {
-            ctx.save();
-            
-            // Draw segments based on growth
-            const totalSegments = pathIds.length - 1;
-            const activeSegmentsCount = currentGrowth * totalSegments;
-
-            ctx.beginPath();
-            let first = true;
-            for (let i = 0; i <= Math.ceil(activeSegmentsCount); i++) {
-              if (i >= pathIds.length) break;
-              const id = pathIds[i];
-              if (!id) continue;
-              const p = particlesRef.current.find(part => part.id === id);
-              if (p) {
-                const pos = project(p.x, p.y - trunkHeight, p.z);
-                if (!pos || isNaN(pos.x) || isNaN(pos.y)) continue;
-                
-                // If it's a partial segment, interpolate
-                if (i > activeSegmentsCount && i > 0) {
-                  const lastId = pathIds[i-1];
-                  const lastP = lastId ? particlesRef.current.find(part => part.id === lastId) : null;
-                  if (lastP) {
-                    const lastPos = project(lastP.x, lastP.y - trunkHeight, lastP.z);
-                    const t = activeSegmentsCount - (i - 1);
-                    const fx = lastPos.x + (pos.x - lastPos.x) * t;
-                    const fy = lastPos.y + (pos.y - lastPos.y) * t;
-                    ctx.lineTo(fx, fy);
-                  }
-                } else {
-                  if (first) {
-                    ctx.moveTo(pos.x, pos.y);
-                    first = false;
-                  } else {
-                    ctx.lineTo(pos.x, pos.y);
-                  }
-                }
+          let first = true;
+          pathIds.forEach(id => {
+            const p = particlesRef.current.find(part => part.id === id);
+            if (p) {
+              const pos = project(p.x, p.y - trunkHeight, p.z);
+              if (first) {
+                ctx.moveTo(pos.x, pos.y);
+                first = false;
+              } else {
+                ctx.lineTo(pos.x, pos.y);
               }
             }
+          });
 
-            // Style for the "Journey" line
-            ctx.strokeStyle = `rgba(255, 255, 255, ${journey.isGrowing ? 0.4 : 0.15})`;
-            ctx.setLineDash([5, 15]);
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            ctx.setLineDash([]);
+          // Style for the "Journey" line
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+          ctx.setLineDash([5, 15]);
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          ctx.setLineDash([]);
+          
+          // Flowing light along the path
+          journeyPathRef.current.progress += 0.005;
+          if (journeyPathRef.current.progress > 1) journeyPathRef.current.progress = 0;
+          
+          const prog = journeyPathRef.current.progress;
+          const totalPoints = pathIds.length;
+          if (totalPoints > 1) {
+            const segmentIdx = Math.floor(prog * (totalPoints - 1));
+            const segmentProgress = (prog * (totalPoints - 1)) % 1;
             
-            // Flowing light along the path (only drawn if fully grown or enough revealed)
-            if (activeSegmentsCount > 0.1) {
-              journey.progress += 0.005;
-              if (journey.progress > 1) journey.progress = 0;
+            const p1 = particlesRef.current.find(part => part.id === pathIds[segmentIdx]);
+            const p2 = particlesRef.current.find(part => part.id === pathIds[segmentIdx + 1]);
+            
+            if (p1 && p2) {
+              const pos1 = project(p1.x, p1.y - trunkHeight, p1.z);
+              const pos2 = project(p2.x, p2.y - trunkHeight, p2.z);
               
-              const prog = journey.progress * currentGrowth; // Scale flow with growth
-              const totalPoints = pathIds.length;
-              if (totalPoints > 1) {
-                const segmentIdx = Math.floor(prog * (totalPoints - 1));
-                const segmentProgress = (prog * (totalPoints - 1)) % 1;
-                
-                const p1 = particlesRef.current.find(part => part.id === pathIds[segmentIdx]);
-                const p2 = particlesRef.current.find(part => part.id === pathIds[segmentIdx + 1]);
-                
-                if (p1 && p2) {
-                  const pos1 = project(p1.x, p1.y - trunkHeight, p1.z);
-                  const pos2 = project(p2.x, p2.y - trunkHeight, p2.z);
-                  
-                  const fx = pos1.x + (pos2.x - pos1.x) * segmentProgress;
-                  const fy = pos1.y + (pos2.y - pos1.y) * segmentProgress;
-                  
-                  // Expanding pulse at current focus point
-                  ctx.beginPath();
-                  ctx.arc(fx, fy, 4, 0, Math.PI * 2);
-                  ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-                  ctx.shadowBlur = 15;
-                  ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
-                  ctx.fill();
-                  ctx.shadowBlur = 0;
-                }
-              }
+              const fx = pos1.x + (pos2.x - pos1.x) * segmentProgress;
+              const fy = pos1.y + (pos2.y - pos1.y) * segmentProgress;
+              
+              // Expanding pulse at current focus point
+              ctx.beginPath();
+              ctx.arc(fx, fy, 4, 0, Math.PI * 2);
+              ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+              ctx.shadowBlur = 15;
+              ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+              ctx.fill();
+              ctx.shadowBlur = 0;
 
               // Label A, B, C for the path
               for (let i = 0; i < pathIds.length; i++) {
-                if (i > activeSegmentsCount) break;
                 const lp = particlesRef.current.find(part => part.id === pathIds[i]);
                 if (lp) {
                   const lPos = project(lp.x, lp.y - trunkHeight, lp.z);
-                  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                  ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
                   ctx.font = 'bold 10px sans-serif';
                   ctx.fillText(String.fromCharCode(65 + i), lPos.x, lPos.y - 15);
                 }
               }
             }
-            ctx.restore();
           }
+          ctx.restore();
         }
 
         // First update all particle positions
@@ -1002,26 +953,14 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
 
       ctx.restore();
       animationFrameRef.current = requestAnimationFrame(animate);
-      errorCount = 0; // Reset error count on successful frame
-    } catch (err) {
-      errorCount++;
-      console.error("DriftTree Render Error:", err);
-      // Attempt to restart frame but slow down if errors persist to avoid crashing browser
-      if (errorCount < 10) {
-        animationFrameRef.current = requestAnimationFrame(animate);
-      } else {
-        console.warn("Too many rendering errors, stopping animation loop.");
-      }
-    }
-  };
+    };
 
-  animate();
+    animate();
 
-  return () => {
-    resizeObserver.disconnect();
-    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-  };
-}, [clusterData]);
+    return () => {
+      cancelAnimationFrame(animationFrameRef.current);
+    };
+  }, [clusterData, fragments.length]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     const canvas = canvasRef.current;
@@ -1289,7 +1228,7 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
   };
 
   return (
-    <div ref={containerRef} className="fixed inset-0 w-full h-full bg-[#080810] z-0 overflow-hidden">
+    <div ref={containerRef} className="absolute inset-0 w-full h-full bg-[#080810] z-0 overflow-hidden">
       
       {/* Fixed UI Overlay (Title & Stats) */}
       <div className="absolute top-8 left-1/2 -translate-x-1/2 w-full max-w-7xl px-8 flex flex-col items-center pointer-events-none z-40 select-none">
@@ -1442,18 +1381,7 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
                 onClick={() => {
                   if (selectedNode) {
                     const centerP = particlesRef.current.find(p => p.id === selectedNode.id);
-                    if (centerP) {
-                      handlePulseStart(centerP);
-                      // Trigger focus path growth after the pulse has some time to shine
-                      setTimeout(() => {
-                        journeyPathRef.current.isGrowing = true;
-                        journeyPathRef.current.growthStartTime = Date.now();
-                        // Reset growing after some time
-                        setTimeout(() => {
-                          journeyPathRef.current.isGrowing = false;
-                        }, 4000);
-                      }, 1000);
-                    }
+                    if (centerP) handlePulseStart(centerP);
                   }
                   setSelectedNode(null);
                 }}

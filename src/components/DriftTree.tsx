@@ -400,7 +400,7 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
       }
     });
 
-    // Set initial canvas dimensions immediately
+    // Set initial canvas dimensions immediately to avoid black screen on first mount
     if (containerRef.current) {
       canvas.width = containerRef.current.clientWidth;
       canvas.height = containerRef.current.clientHeight;
@@ -408,6 +408,7 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
 
     resizeObserver.observe(containerRef.current);
 
+    let errorCount = 0;
     const animate = () => {
       try {
         const width = canvas.width;
@@ -1001,10 +1002,16 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
 
       ctx.restore();
       animationFrameRef.current = requestAnimationFrame(animate);
+      errorCount = 0; // Reset error count on successful frame
     } catch (err) {
+      errorCount++;
       console.error("DriftTree Render Error:", err);
-      // Attempt to restart frame even on error to keep UI interactive
-      animationFrameRef.current = requestAnimationFrame(animate);
+      // Attempt to restart frame but slow down if errors persist to avoid crashing browser
+      if (errorCount < 10) {
+        animationFrameRef.current = requestAnimationFrame(animate);
+      } else {
+        console.warn("Too many rendering errors, stopping animation loop.");
+      }
     }
   };
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Navigation } from './components/Navigation';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { DriftTree } from './components/DriftTree';
 import { type Fragment, type Connection } from './lib/supabase';
 import { storage } from './lib/storage';
@@ -1274,7 +1275,9 @@ export default function App() {
       <div className="max-w-[480px] mx-auto min-h-screen bg-background relative overflow-hidden flex flex-col">
         <div className="atmosphere" />
         <main className="flex-1 overflow-y-auto">
-          {hasEntered ? <AnimatedRoutes clusterData={clusterData} setClusterData={setClusterData} /> : <LandingPage onEnter={handleEnter} />}
+          <ErrorBoundary>
+            {hasEntered ? <AnimatedRoutes clusterData={clusterData} setClusterData={setClusterData} /> : <LandingPage onEnter={handleEnter} />}
+          </ErrorBoundary>
         </main>
         {hasEntered && <Navigation />}
       </div>

@@ -63,22 +63,17 @@ export interface SynthesisResult {
   };
 }
 
-export const synthesizeThoughts = async (thoughts: string[]): Promise<SynthesisResult | null> => {
+export const synthesizeThoughts = async (fragments: { content: string; id: string }[]): Promise<SynthesisResult | null> => {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Here are all the user's thought records for this week: ${JSON.stringify(thoughts)}
+      contents: `Here are all the user's thought records for this week: ${JSON.stringify(fragments)}
       
       Please analyze the underlying connection logic of these records:
       1. How are these thoughts connected?
       2. Which keywords link the different thoughts together?
       3. What is the core theme of this week's thinking?
-      4. Create a "Thought Path" (Evolutionary Trace) for the 5-7 most relevant fragments. Show how the user's focus evolved from idea A to B to C.
-      
-      Please output in three parts:
-      - Text version: 2-3 fluent paragraphs
-      - Keyword version: 5-8 core tags
-      - Thought Path: fragment IDs and a brief evolutionary summary`,
+      4. Create a "Thought Path" (Evolutionary Trace) using 5-7 of the provided fragment IDs. Show how the user's focus evolved from idea A to B to C.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {

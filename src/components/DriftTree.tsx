@@ -403,16 +403,22 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
     resizeObserver.observe(containerRef.current);
 
     const animate = () => {
-      const width = canvas.width;
-      const height = canvas.height;
+      try {
+        const width = canvas.width;
+        const height = canvas.height;
+        
+        if (width === 0 || height === 0) {
+          animationFrameRef.current = requestAnimationFrame(animate);
+          return;
+        }
 
-      // Update Growth
-      if (growthProgressRef.current < 1) {
-        growthProgressRef.current += 0.008; // Faster growth
-      }
+        // Update Growth
+        if (growthProgressRef.current < 1) {
+          growthProgressRef.current += 0.008; // Faster growth
+        }
 
-      const time = Date.now() * 0.001;
-      ctx.clearRect(0, 0, width, height);
+        const time = Date.now() * 0.001;
+        ctx.clearRect(0, 0, width, height);
 
       // 1. Background (Fixed)
       const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
@@ -527,9 +533,12 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
           ctx.stroke();
           
           // Glowing fibers
-          if (Math.random() > 0.95) {
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = 'rgba(255, 78, 0, 0.8)';
+          if (Math.random() > 0.98) {
+            const isMobile = window.innerWidth < 768;
+            if (!isMobile) {
+              ctx.shadowBlur = 10;
+              ctx.shadowColor = 'rgba(255, 78, 0, 0.8)';
+            }
             ctx.strokeStyle = 'rgba(255, 150, 0, 0.4)';
             ctx.stroke();
             ctx.shadowBlur = 0;
@@ -562,9 +571,12 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
           ctx.strokeStyle = `${branch.color}, 0.3)`;
           ctx.lineWidth = 3 * (1 - branchProgress * 0.5);
           
-          // Glow effect for branches
-          ctx.shadowBlur = 8 * branchProgress;
-          ctx.shadowColor = `${branch.color}, 0.5)`;
+          // Glow effect for branches - reduced on mobile
+          const isMobile = window.innerWidth < 768;
+          if (!isMobile) {
+            ctx.shadowBlur = 8 * branchProgress;
+            ctx.shadowColor = `${branch.color}, 0.5)`;
+          }
           ctx.stroke();
           ctx.shadowBlur = 0;
 
@@ -983,15 +995,20 @@ export const DriftTree: React.FC<DriftTreeProps> = ({
 
       ctx.restore();
       animationFrameRef.current = requestAnimationFrame(animate);
-    };
+    } catch (err) {
+      console.error("DriftTree Render Error:", err);
+      // Attempt to restart frame even on error to keep UI interactive
+      animationFrameRef.current = requestAnimationFrame(animate);
+    }
+  };
 
-    animate();
+  animate();
 
-    return () => {
-      resizeObserver.disconnect();
-      cancelAnimationFrame(animationFrameRef.current);
-    };
-  }, [clusterData]);
+  return () => {
+    resizeObserver.disconnect();
+    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+  };
+}, [clusterData]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     const canvas = canvasRef.current;

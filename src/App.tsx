@@ -933,7 +933,7 @@ const SynthesisPage = ({ clusterData }: { clusterData: any }) => {
       
       const recentThoughts = allFragments
         .filter(f => new Date(f.created_at) >= sevenDaysAgo)
-        .map(f => f.content);
+        .map(f => ({ content: f.content, id: f.id }));
 
       if (recentThoughts.length === 0) {
         setError("No thoughts recorded in the last 7 days.");

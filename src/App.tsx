@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Navigation } from './components/Navigation';
@@ -1225,6 +1226,7 @@ export default function App() {
         </main>
         {hasEntered && <Navigation />}
       </div>
+      <Analytics />
     </Router>
   );
 }
